@@ -1,0 +1,8 @@
+name: foundry
+version: 0.1.0
+description: >
+  Foundry — the executive reasoning layer that runs on top of Hermes.
+  Phase 0: given an objective, the Executive asks the Planner (via Hermes'
+  LLM) for a single tool call and delegates it through Hermes.
+provides_tools:
+  - foundry_execute
