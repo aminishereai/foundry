@@ -5,27 +5,46 @@ model — they only shape the JSON Foundry asks its Planner's LLM call to
 return via ctx.llm.complete_structured.
 """
 
-PLAN_STEP_SCHEMA = {
+PLAN_SCHEMA = {
     "type": "object",
     "properties": {
-        "tool_name": {
+        "steps": {
+            "type": "array",
+            "description": (
+                "Ordered sequence of 0-4 tool calls. Empty list means no "
+                "sequence of tool calls meaningfully advances the objective."
+            ),
+            "items": {
+                "type": "object",
+                "properties": {
+                    "tool_name": {
+                        "type": "string",
+                        "description": (
+                            "The Hermes tool to call — must be one of the "
+                            "names confirmed in tools/registry.py (e.g. "
+                            "'read_file', 'search_files', 'terminal', "
+                            "'execute_code', 'delegate_task')."
+                        ),
+                    },
+                    "tool_args": {
+                        "type": "object",
+                        "description": "Arguments for this tool, in the shape that tool expects.",
+                    },
+                    "reasoning": {
+                        "type": "string",
+                        "description": "One short sentence on why this step is needed.",
+                    },
+                },
+                "required": ["tool_name", "tool_args", "reasoning"],
+            },
+        },
+        "overall_reasoning": {
             "type": "string",
             "description": (
-                "The Hermes tool to call — must be one of the names "
-                "confirmed in tools/registry.py (e.g. 'read_file', "
-                "'search_files', 'terminal', 'execute_code', "
-                "'delegate_task'). Empty string if no single tool call "
-                "can make progress on the objective."
+                "One or two sentences on the overall strategy, or why zero "
+                "steps were chosen."
             ),
         },
-        "tool_args": {
-            "type": "object",
-            "description": "Arguments for the chosen tool, in the shape that tool expects.",
-        },
-        "reasoning": {
-            "type": "string",
-            "description": "One or two sentences on why this tool and these args were chosen.",
-        },
     },
-    "required": ["tool_name", "tool_args", "reasoning"],
+    "required": ["steps", "overall_reasoning"],
 }
