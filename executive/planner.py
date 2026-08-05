@@ -40,7 +40,7 @@ class Planner:
             schema_name="foundry.plan_step",
             purpose="foundry.planner",
             temperature=0.0,
-            max_tokens=300,
+            max_tokens=1500,
         )
         usage = getattr(result, "usage", None)
         return PlanOutcome(
