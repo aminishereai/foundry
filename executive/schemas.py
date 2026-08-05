@@ -11,9 +11,11 @@ PLAN_STEP_SCHEMA = {
         "tool_name": {
             "type": "string",
             "description": (
-                "The Hermes tool to call, e.g. 'read_file', 'search_files', "
-                "'execute_code', 'delegate_task'. Empty string if no single "
-                "tool call can make progress on the objective."
+                "The Hermes tool to call — must be one of the names "
+                "confirmed in tools/registry.py (e.g. 'read_file', "
+                "'search_files', 'terminal', 'execute_code', "
+                "'delegate_task'). Empty string if no single tool call "
+                "can make progress on the objective."
             ),
         },
         "tool_args": {
