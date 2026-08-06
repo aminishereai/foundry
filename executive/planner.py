@@ -1,16 +1,12 @@
-"""Planner — produces structured plans only. Never executes. Never calls
-tools directly. All reasoning flows through Hermes via the LLM adapter.
+"""Planner — produces candidate plans only. Never executes. Never calls
+tools directly. Never picks the winner between its own candidates — that
+selection is Economics' job (see executive/economics.py::select_best).
+All reasoning flows through Hermes via the LLM adapter.
 
-Phase 2: plans are now an ordered sequence of 0-4 steps instead of
-exactly one. Honest scope limit: the whole sequence is produced in a
-single upfront LLM call, before any step executes — so a step cannot see
-a previous step's actual output value. This handles multi-action
-objectives whose steps are independent of each other's results (e.g.
-"read config.yaml and write a summary to notes.md"), not dependent
-chains ("find the file, then read whatever you found"). True dependent
-chaining needs re-planning between steps, which is out of scope until a
-later phase. This constraint is stated directly in the prompt so the
-Planner doesn't attempt something it can't actually do.
+Phase 1b: the Planner now proposes 1-3 candidate approaches per
+objective instead of exactly one, so the Executive has something real to
+compare. Each candidate still carries the Phase 2 honest-dependency-limit
+constraint individually (see prompts/planner_prompt.py).
 """
 
 from __future__ import annotations
@@ -19,44 +15,45 @@ from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
 
 from ..prompts.planner_prompt import PLANNER_INSTRUCTIONS
-from .schemas import PLAN_SCHEMA
+from .schemas import CANDIDATE_PLANS_SCHEMA
 
 
 @dataclass
 class PlanOutcome:
-    """What the Planner produces: an ordered step sequence, plus the real
-    cost of producing it. Cost is surfaced (not consumed) here — Executive
-    owns the budget decision, Planner just reports what its call cost."""
+    """What the Planner produces: candidate plans, plus the real cost of
+    producing them (one LLM call regardless of candidate count). Cost is
+    surfaced, not consumed — Executive owns the budget decision."""
 
-    steps: List[Dict[str, Any]] = field(default_factory=list)
+    candidates: List[Dict[str, Any]] = field(default_factory=list)
     overall_reasoning: str = ""
     cost_usd: Optional[float] = None
     total_tokens: int = 0
 
 
 class Planner:
-    """Asks Hermes' LLM for an ordered sequence of tool-call decisions."""
+    """Asks Hermes' LLM for 1-3 candidate tool-call sequences."""
 
     def __init__(self, llm_adapter: Any) -> None:
         self._llm = llm_adapter
 
     def plan(self, objective: str) -> PlanOutcome:
-        """Return a PlanOutcome. steps is empty if the LLM declined to
-        produce any (a valid outcome — see prompt rule 4) or if the
-        structured call failed to parse at all."""
+        """Return a PlanOutcome. candidates is empty only if the
+        structured call failed to parse at all — a deliberate single
+        empty-steps candidate (see prompt rule 5) is a valid, non-empty
+        candidates list and is handled by Economics.select_best, not here."""
         result = self._llm.complete_structured(
             instructions=PLANNER_INSTRUCTIONS,
             input=[{"type": "text", "text": objective}],
-            json_schema=PLAN_SCHEMA,
-            schema_name="foundry.plan",
+            json_schema=CANDIDATE_PLANS_SCHEMA,
+            schema_name="foundry.candidate_plans",
             purpose="foundry.planner",
             temperature=0.0,
-            max_tokens=1500,
+            max_tokens=1800,
         )
         usage = getattr(result, "usage", None)
         parsed = result.parsed or {}
         return PlanOutcome(
-            steps=list(parsed.get("steps") or []),
+            candidates=list(parsed.get("candidates") or []),
             overall_reasoning=parsed.get("overall_reasoning", ""),
             cost_usd=getattr(usage, "cost_usd", None) if usage else None,
             total_tokens=getattr(usage, "total_tokens", 0) if usage else 0,

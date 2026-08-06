@@ -2,11 +2,10 @@
 it succeeded. Owns no infrastructure: all LLM access and all tool
 execution happen through the two adapters it's given.
 
-Phase 2: executes a Planner-produced sequence of 1-4 steps in order,
-stopping immediately on the first failure. No retry, no recovery, no
-skipping ahead — that's Phase 4 (Executive Runtime). This is
-intentionally the simplest correct thing: run each step, record what
-happened, stop the moment something breaks.
+Phase 1b: the Planner now proposes candidates; the Executive picks the
+winner via Economics.select_best (confidence-per-step scoring, no extra
+LLM call) before executing anything. Every result includes
+considered_candidates so the decision is auditable, not a black box.
 """
 
 from __future__ import annotations
@@ -14,7 +13,7 @@ from __future__ import annotations
 from dataclasses import asdict
 from typing import Any, Dict, List, Optional
 
-from .economics import Budget
+from .economics import Budget, select_best
 from .planner import Planner
 
 
@@ -30,9 +29,9 @@ class Executive:
         self._budget = budget if budget is not None else Budget()
 
     def run(self, objective: str) -> Dict[str, Any]:
-        """End-to-end execution path: check budget, plan a step sequence
-        (one Planner LLM call regardless of sequence length), execute
-        each step through Hermes in order, stop on first failure. Never
+        """End-to-end execution path: check budget, get candidate plans
+        (one Planner LLM call), select the best by ROI score, execute its
+        steps through Hermes in order, stop on first failure. Never
         raises — callers get a structured error result instead."""
         if not self._budget.try_reserve():
             return {
@@ -45,17 +44,38 @@ class Executive:
         self._budget.record(outcome.cost_usd)
         budget_snapshot = asdict(self._budget.status())
 
-        if not outcome.steps:
+        best_candidate, best_score, scores = select_best(outcome.candidates)
+        considered = [asdict(s) for s in scores]
+
+        if best_candidate is None:
             return {
                 "status": "no_action",
                 "objective": objective,
                 "reason": outcome.overall_reasoning
-                or "Planner did not produce a usable plan.",
+                or "Planner did not produce any usable candidates.",
+                "considered_candidates": considered,
+                "budget": budget_snapshot,
+            }
+
+        steps = best_candidate.get("steps") or []
+        selected_summary = {
+            "approach_summary": getattr(best_score, "approach_summary", ""),
+            "confidence": getattr(best_score, "confidence", 0.0),
+        }
+
+        if not steps:
+            return {
+                "status": "no_action",
+                "objective": objective,
+                "reason": outcome.overall_reasoning
+                or "The best-scoring candidate was to take no action.",
+                "selected_candidate": selected_summary,
+                "considered_candidates": considered,
                 "budget": budget_snapshot,
             }
 
         executed_steps: List[Dict[str, Any]] = []
-        for index, step in enumerate(outcome.steps):
+        for index, step in enumerate(steps):
             tool_name = step.get("tool_name")
             tool_args = step.get("tool_args", {})
             reasoning = step.get("reasoning", "")
@@ -65,9 +85,10 @@ class Executive:
                     "status": "error",
                     "stage": "planning",
                     "objective": objective,
-                    "overall_reasoning": outcome.overall_reasoning,
                     "error": f"Step {index} has no tool_name.",
                     "executed_steps": executed_steps,
+                    "selected_candidate": selected_summary,
+                    "considered_candidates": considered,
                     "budget": budget_snapshot,
                 }
 
@@ -86,9 +107,10 @@ class Executive:
                     "status": "error",
                     "stage": "execution",
                     "objective": objective,
-                    "overall_reasoning": outcome.overall_reasoning,
                     "executed_steps": executed_steps,
                     "failed_at_step": index,
+                    "selected_candidate": selected_summary,
+                    "considered_candidates": considered,
                     "budget": budget_snapshot,
                 }
 
@@ -104,7 +126,8 @@ class Executive:
         return {
             "status": "ok",
             "objective": objective,
-            "overall_reasoning": outcome.overall_reasoning,
             "executed_steps": executed_steps,
+            "selected_candidate": selected_summary,
+            "considered_candidates": considered,
             "budget": budget_snapshot,
         }
