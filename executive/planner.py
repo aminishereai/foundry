@@ -7,10 +7,19 @@ Phase 1b: the Planner now proposes 1-3 candidate approaches per
 objective instead of exactly one, so the Executive has something real to
 compare. Each candidate still carries the Phase 2 honest-dependency-limit
 constraint individually (see prompts/planner_prompt.py).
+
+Optional model/provider pinning: some free-tier models (observed:
+openai/gpt-oss-20b:free) reliably fail to produce valid structured JSON
+for this schema, while others (observed: nvidia/nemotron-3-super-120b-a12b:free)
+handle it fine — same schema, same prompt, different reliability. Rather
+than hardcode a specific model permanently, FOUNDRY_PLANNER_MODEL and
+FOUNDRY_PLANNER_PROVIDER env vars let it be pinned when needed. Unset by
+default — Hermes picks as it normally would.
 """
 
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
 
@@ -41,7 +50,7 @@ class Planner:
         structured call failed to parse at all — a deliberate single
         empty-steps candidate (see prompt rule 5) is a valid, non-empty
         candidates list and is handled by Economics.select_best, not here."""
-        result = self._llm.complete_structured(
+        kwargs: Dict[str, Any] = dict(
             instructions=PLANNER_INSTRUCTIONS,
             input=[{"type": "text", "text": objective}],
             json_schema=CANDIDATE_PLANS_SCHEMA,
@@ -50,6 +59,14 @@ class Planner:
             temperature=0.0,
             max_tokens=4000,
         )
+        model = os.environ.get("FOUNDRY_PLANNER_MODEL")
+        if model:
+            kwargs["model"] = model
+        provider = os.environ.get("FOUNDRY_PLANNER_PROVIDER")
+        if provider:
+            kwargs["provider"] = provider
+
+        result = self._llm.complete_structured(**kwargs)
         usage = getattr(result, "usage", None)
         parsed = result.parsed or {}
         return PlanOutcome(
