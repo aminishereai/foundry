@@ -48,7 +48,7 @@ class Planner:
             schema_name="foundry.candidate_plans",
             purpose="foundry.planner",
             temperature=0.0,
-            max_tokens=1800,
+            max_tokens=4000,
         )
         usage = getattr(result, "usage", None)
         parsed = result.parsed or {}
