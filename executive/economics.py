@@ -86,3 +86,61 @@ class Budget:
                 remaining_usd=max(0.0, self._limit_usd - self._spent_usd),
                 cost_unknown_calls=self._cost_unknown_calls,
             )
+
+
+@dataclass
+class CandidateScore:
+    """Score for one candidate plan. score = confidence / max(1, step_count).
+
+    Deliberately NOT a dollar-cost comparison — Foundry has no way to know
+    a tool call's real dollar cost before dispatching it (Hermes owns that
+    pipeline, not Foundry), so inventing a cost estimate here would violate
+    the same honesty principle Budget already applies via
+    cost_unknown_calls. Step count is the real, available proxy for cost
+    and risk: more tool calls means more time, more chances to fail, more
+    actual future spend. Confidence is the Planner's own honest estimate,
+    self-reported per candidate.
+    """
+
+    index: int
+    approach_summary: str
+    confidence: float
+    step_count: int
+    score: float
+
+
+def score_candidates(candidates: list) -> list[CandidateScore]:
+    """Score every candidate. Confidence values are clamped to [0, 1] —
+    a candidate's self-reported confidence is not trusted blindly."""
+    scored : list[CandidateScore] = []
+    for i, candidate in enumerate(candidates):
+        steps = candidate.get("steps") or []
+        try:
+            confidence = float(candidate.get("confidence", 0.0))
+        except (TypeError, ValueError):
+            confidence = 0.0
+        confidence = max(0.0, min(1.0, confidence))
+        step_count = len(steps)
+        score = confidence / max(1, step_count)
+        scored.append(
+            CandidateScore(
+                index=i,
+                approach_summary=candidate.get("approach_summary", ""),
+                confidence=confidence,
+                step_count=step_count,
+                score=score,
+            )
+        )
+    return scored
+
+
+def select_best(candidates: list):
+    """Return (best_candidate_dict_or_None, best_score_or_None, all_scores).
+    Deterministic, no extra LLM call — this is real ROI selection, not
+    another round of inference. Ties: fewer steps wins, then first-listed
+    wins."""
+    if not candidates:
+        return None, None, []
+    scores = score_candidates(candidates)
+    best = max(scores, key=lambda s: (s.score, -s.step_count, -s.index))
+    return candidates[best.index], best, scores
