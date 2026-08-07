@@ -5,10 +5,18 @@ adapter, same as Planner.
 Phase 3 scope: only called on successful (status="ok") executions with
 at least one executed step. There's nothing meaningful to critique in a
 no_action or error result — no completed work exists yet to judge.
+
+Optional model/provider pinning: same mechanism as Planner
+(FOUNDRY_PLANNER_MODEL/PROVIDER), via FOUNDRY_CRITIC_MODEL/PROVIDER.
+This is how Foundry moves off free-tier dev models to a capable model in
+production without any code change — Hermes still owns the actual
+provider connection and credentials; Foundry only ever states a
+preference via the real model=/provider= kwargs plugin_llm.py exposes.
 """
 
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional
 
@@ -39,7 +47,7 @@ class Critic:
             }
             for step in executed_steps
         ]
-        result = self._llm.complete_structured(
+        kwargs: Dict[str, Any] = dict(
             instructions=CRITIC_INSTRUCTIONS,
             input=[{
                 "type": "text",
@@ -51,6 +59,14 @@ class Critic:
             temperature=0.0,
             max_tokens=1200,
         )
+        model = os.environ.get("FOUNDRY_CRITIC_MODEL")
+        if model:
+            kwargs["model"] = model
+        provider = os.environ.get("FOUNDRY_CRITIC_PROVIDER")
+        if provider:
+            kwargs["provider"] = provider
+
+        result = self._llm.complete_structured(**kwargs)
         usage = getattr(result, "usage", None)
         parsed = result.parsed or {}
         return CritiqueOutcome(
