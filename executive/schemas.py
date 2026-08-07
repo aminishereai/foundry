@@ -77,3 +77,24 @@ CANDIDATE_PLANS_SCHEMA = {
     },
     "required": ["candidates", "overall_reasoning"],
 }
+CRITIQUE_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "verdict": {
+            "type": "string",
+            "enum": ["satisfied", "partially_satisfied", "not_satisfied"],
+            "description": (
+                "Honest judgment of whether the executed steps actually "
+                "achieved the objective, based on their real results."
+            ),
+        },
+        "critique": {
+            "type": "string",
+            "description": (
+                "One or two sentences explaining the verdict, referencing "
+                "what actually happened, not what the steps intended to do."
+            ),
+        },
+    },
+    "required": ["verdict", "critique"],
+}
