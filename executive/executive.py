@@ -2,10 +2,11 @@
 it succeeded. Owns no infrastructure: all LLM access and all tool
 execution happen through the two adapters it's given.
 
-Phase 1b: the Planner now proposes candidates; the Executive picks the
-winner via Economics.select_best (confidence-per-step scoring, no extra
-LLM call) before executing anything. Every result includes
-considered_candidates so the decision is auditable, not a black box.
+Phase 3: after a successful execution, the Critic reviews the real
+results (one more LLM call, budget-gated same as planning) and the
+verdict is attached to the result. The Critic never changes what already
+happened — it only judges it. If budget is exhausted, critique is
+skipped and marked as such, never silently faked.
 """
 
 from __future__ import annotations
@@ -13,6 +14,7 @@ from __future__ import annotations
 from dataclasses import asdict
 from typing import Any, Dict, List, Optional
 
+from .critic import Critic
 from .economics import Budget, select_best
 from .planner import Planner
 
@@ -25,14 +27,11 @@ class Executive:
         budget: Optional[Budget] = None,
     ) -> None:
         self._planner = Planner(llm_adapter)
+        self._critic = Critic(llm_adapter)
         self._tools = tool_adapter
         self._budget = budget if budget is not None else Budget()
 
     def run(self, objective: str) -> Dict[str, Any]:
-        """End-to-end execution path: check budget, get candidate plans
-        (one Planner LLM call), select the best by ROI score, execute its
-        steps through Hermes in order, stop on first failure. Never
-        raises — callers get a structured error result instead."""
         if not self._budget.try_reserve():
             return {
                 "status": "budget_exceeded",
@@ -42,7 +41,6 @@ class Executive:
 
         outcome = self._planner.plan(objective)
         self._budget.record(outcome.cost_usd)
-        budget_snapshot = asdict(self._budget.status())
 
         best_candidate, best_score, scores = select_best(outcome.candidates)
         considered = [asdict(s) for s in scores]
@@ -54,7 +52,7 @@ class Executive:
                 "reason": outcome.overall_reasoning
                 or "Planner did not produce any usable candidates.",
                 "considered_candidates": considered,
-                "budget": budget_snapshot,
+                "budget": asdict(self._budget.status()),
             }
 
         steps = best_candidate.get("steps") or []
@@ -71,7 +69,7 @@ class Executive:
                 or "The best-scoring candidate was to take no action.",
                 "selected_candidate": selected_summary,
                 "considered_candidates": considered,
-                "budget": budget_snapshot,
+                "budget": asdict(self._budget.status()),
             }
 
         executed_steps: List[Dict[str, Any]] = []
@@ -89,7 +87,7 @@ class Executive:
                     "executed_steps": executed_steps,
                     "selected_candidate": selected_summary,
                     "considered_candidates": considered,
-                    "budget": budget_snapshot,
+                    "budget": asdict(self._budget.status()),
                 }
 
             try:
@@ -111,7 +109,7 @@ class Executive:
                     "failed_at_step": index,
                     "selected_candidate": selected_summary,
                     "considered_candidates": considered,
-                    "budget": budget_snapshot,
+                    "budget": asdict(self._budget.status()),
                 }
 
             executed_steps.append({
@@ -123,11 +121,23 @@ class Executive:
                 "result": tool_result,
             })
 
+        # All steps succeeded. Critique what actually happened, budget permitting.
+        if self._budget.try_reserve():
+            critique_outcome = self._critic.review(objective, executed_steps)
+            self._budget.record(critique_outcome.cost_usd)
+            critique_block: Dict[str, Any] = {
+                "verdict": critique_outcome.verdict,
+                "critique": critique_outcome.critique,
+            }
+        else:
+            critique_block = {"skipped": "budget_exceeded"}
+
         return {
             "status": "ok",
             "objective": objective,
             "executed_steps": executed_steps,
             "selected_candidate": selected_summary,
             "considered_candidates": considered,
-            "budget": budget_snapshot,
+            "critique": critique_block,
+            "budget": asdict(self._budget.status()),
         }
