@@ -31,12 +31,17 @@ from .schemas import CANDIDATE_PLANS_SCHEMA
 class PlanOutcome:
     """What the Planner produces: candidate plans, plus the real cost of
     producing them (one LLM call regardless of candidate count). Cost is
-    surfaced, not consumed — Executive owns the budget decision."""
+    surfaced, not consumed — Executive owns the budget decision. model/
+    input_tokens/output_tokens are captured so Budget can estimate cost
+    when the host doesn't report cost_usd (see economics.py)."""
 
     candidates: List[Dict[str, Any]] = field(default_factory=list)
     overall_reasoning: str = ""
     cost_usd: Optional[float] = None
     total_tokens: int = 0
+    input_tokens: int = 0
+    output_tokens: int = 0
+    model: Optional[str] = None
 
 
 class Planner:
@@ -74,4 +79,7 @@ class Planner:
             overall_reasoning=parsed.get("overall_reasoning", ""),
             cost_usd=getattr(usage, "cost_usd", None) if usage else None,
             total_tokens=getattr(usage, "total_tokens", 0) if usage else 0,
+            input_tokens=getattr(usage, "input_tokens", 0) if usage else 0,
+            output_tokens=getattr(usage, "output_tokens", 0) if usage else 0,
+            model=getattr(result, "model", None),
         )

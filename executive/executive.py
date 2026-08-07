@@ -32,6 +32,11 @@ class Executive:
         self._budget = budget if budget is not None else Budget()
 
     def run(self, objective: str) -> Dict[str, Any]:
+        """End-to-end execution path: check budget, get candidate plans,
+        select the best by ROI score, execute its steps through Hermes in
+        order (stop on first failure), then critique a successful result
+        if budget allows. Never raises — callers get a structured error
+        result instead."""
         if not self._budget.try_reserve():
             return {
                 "status": "budget_exceeded",
@@ -40,7 +45,12 @@ class Executive:
             }
 
         outcome = self._planner.plan(objective)
-        self._budget.record(outcome.cost_usd)
+        self._budget.record(
+            outcome.cost_usd,
+            model=outcome.model,
+            input_tokens=outcome.input_tokens,
+            output_tokens=outcome.output_tokens,
+        )
 
         best_candidate, best_score, scores = select_best(outcome.candidates)
         considered = [asdict(s) for s in scores]
@@ -57,8 +67,8 @@ class Executive:
 
         steps = best_candidate.get("steps") or []
         selected_summary = {
-            "approach_summary": getattr(best_score, "approach_summary", ""),
-            "confidence": getattr(best_score, "confidence", 0.0),
+            "approach_summary": getattr(best_score ,"approach_summary" , ""),
+            "confidence": getattr(best_score, "confidence" , 0.0),
         }
 
         if not steps:
@@ -124,7 +134,12 @@ class Executive:
         # All steps succeeded. Critique what actually happened, budget permitting.
         if self._budget.try_reserve():
             critique_outcome = self._critic.review(objective, executed_steps)
-            self._budget.record(critique_outcome.cost_usd)
+            self._budget.record(
+                critique_outcome.cost_usd,
+                model=critique_outcome.model,
+                input_tokens=critique_outcome.input_tokens,
+                output_tokens=critique_outcome.output_tokens,
+            )
             critique_block: Dict[str, Any] = {
                 "verdict": critique_outcome.verdict,
                 "critique": critique_outcome.critique,

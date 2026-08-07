@@ -30,6 +30,9 @@ class CritiqueOutcome:
     critique: str = ""
     cost_usd: Optional[float] = None
     total_tokens: int = 0
+    input_tokens: int = 0
+    output_tokens: int = 0
+    model: Optional[str] = None
 
 
 class Critic:
@@ -74,4 +77,7 @@ class Critic:
             critique=parsed.get("critique", ""),
             cost_usd=getattr(usage, "cost_usd", None) if usage else None,
             total_tokens=getattr(usage, "total_tokens", 0) if usage else 0,
+            input_tokens=getattr(usage, "input_tokens", 0) if usage else 0,
+            output_tokens=getattr(usage, "output_tokens", 0) if usage else 0,
+            model=getattr(result, "model", None),
         )
