@@ -208,8 +208,31 @@ class Executive:
                 "verdict": critique_outcome.verdict,
                 "critique": critique_outcome.critique,
             }
+
+            # Best-effort: log a lesson via Hermes' real memory tool only
+            # when the Critic found a genuine gap — not routine successes.
+            # Foundry decides WHAT is worth remembering; Hermes owns the
+            # actual storage. Never blocks or fails the main result — a
+            # memory-write failure is a side-effect failure, not a
+            # execution failure.
+            memory_logged = False
+            if critique_outcome.verdict in ("not_satisfied", "partially_satisfied"):
+                try:
+                    lesson = (
+                        f"Foundry: objective '{objective[:100]}' was "
+                        f"{critique_outcome.verdict} — {critique_outcome.critique[:200]}"
+                    )
+                    self._tools.dispatch("memory", {
+                        "target": "memory",
+                        "action": "add",
+                        "content": lesson,
+                    })
+                    memory_logged = True
+                except Exception:  # noqa: BLE001 — best-effort, never fatal
+                    memory_logged = False
+            critique_block["memory_logged"] = memory_logged
         else:
-            critique_block = {"skipped": "budget_exceeded"}
+            critique_block = {"skipped": "budget_exceeded", "memory_logged": False}
 
         return {
             "status": "ok",
