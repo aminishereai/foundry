@@ -1,21 +1,24 @@
 """Hermes-facing tool schema.
 
-This is the ONLY schema Hermes' model sees for Foundry in Phase 0. It
-describes the single entry point into the Executive. Internal schemas
-(e.g. what the Planner's own structured LLM call returns) live in
+This is the ONLY schema Hermes' model sees for Foundry. It describes the
+single entry point into the Executive. Internal schemas live in
 executive/schemas.py — the model never sees those directly.
 """
 
 FOUNDRY_EXECUTE = {
     "name": "foundry_execute",
     "description": (
-        "Hand an objective to Foundry's Executive. The Executive asks its "
-        "Planner to choose one concrete Hermes tool call that makes real "
-        "progress toward the objective, then delegates that call back "
-        "through Hermes and returns the result. Use this when the user "
-        "wants executive-level reasoning about WHAT to do next, not when "
-        "you already know which tool to call yourself — in that case call "
-        "the tool directly."
+        "Hand an objective to Foundry's Executive. The Executive proposes "
+        "candidate plans, picks the best by confidence-per-step, executes "
+        "it through Hermes, and critiques the real result. Use this when "
+        "the caller wants executive-level reasoning about WHAT to do next, "
+        "not when the tool to call is already known — call it directly in "
+        "that case. If the selected plan includes a destructive/irreversible "
+        "tool (terminal, execute_code, write_file, patch, delegate_task, "
+        "cronjob, computer_use), it will NOT run automatically — the call "
+        "returns status='confirmation_required' with the full plan instead. "
+        "Re-call with confirm_destructive=true only after a human has "
+        "reviewed and approved that specific plan."
     ),
     "parameters": {
         "type": "object",
@@ -27,6 +30,16 @@ FOUNDRY_EXECUTE = {
                     "act on, e.g. 'list the files in the current project "
                     "directory' or 'find recent news about X'."
                 ),
+            },
+            "confirm_destructive": {
+                "type": "boolean",
+                "description": (
+                    "Set true ONLY after a human has explicitly reviewed and "
+                    "approved a plan previously returned with "
+                    "status='confirmation_required'. Defaults to false — "
+                    "destructive tool calls are refused by default."
+                ),
+                "default": False,
             },
         },
         "required": ["objective"],

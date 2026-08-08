@@ -18,8 +18,10 @@ def foundry_execute(args: dict, *, executive, **kwargs) -> str:
     if not objective:
         return json.dumps({"status": "error", "error": "No objective provided"})
 
+    confirm_destructive = bool(args.get("confirm_destructive", False))
+
     try:
-        result = executive.run(objective)
+        result = executive.run(objective, confirm_destructive=confirm_destructive)
     except Exception as exc:  # noqa: BLE001 — handlers must never raise
         return json.dumps({
             "status": "error",
