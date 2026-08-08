@@ -24,6 +24,8 @@ never fakes a critique if budget runs out.
 
 from __future__ import annotations
 
+import json
+import os
 import time
 from dataclasses import asdict
 from typing import Any, Dict, List, Optional
@@ -34,6 +36,14 @@ from .planner import Planner
 
 MAX_DISPATCH_ATTEMPTS = 2  # 1 initial attempt + 1 retry
 RETRY_BACKOFF_SECONDS = 1.0
+
+# Hermes' real persistent memory file — confirmed via source inspection,
+# not an invented path. Computed dynamically (not hardcoded to a
+# specific home directory) so this works regardless of which OS user
+# Hermes runs as.
+MEMORY_FILE_PATH = os.path.expanduser("~/.hermes/memories/MEMORY.md")
+MEMORY_CONTEXT_CHAR_LIMIT = 2000  # bounded, same order of magnitude as
+# Hermes' own memory_char_limit config (2200) — not arbitrary
 
 # Tools whose effects are hard or impossible to undo. Conservative by
 # design — a false positive here just costs one confirmation round trip;
@@ -61,6 +71,20 @@ class Executive:
         self._tools = tool_adapter
         self._budget = budget if budget is not None else Budget()
 
+    def _read_memory_context(self) -> str:
+        """Best-effort read of Hermes' real persistent memory file, so
+        the Planner can be aware of past lessons (e.g. objectives that
+        previously came back not_satisfied). Never blocks or fails
+        planning — returns empty string on any error, since memory
+        context is an enhancement, not a dependency."""
+        try:
+            raw = self._tools.dispatch("read_file", {"path": MEMORY_FILE_PATH})
+            parsed = json.loads(raw) if isinstance(raw, str) else raw
+            content = parsed.get("content", "") if isinstance(parsed, dict) else ""
+            return content[:MEMORY_CONTEXT_CHAR_LIMIT] if content else ""
+        except Exception:  # noqa: BLE001 — best-effort, never fatal
+            return ""
+
     def run(self, objective: str, confirm_destructive: bool = False) -> Dict[str, Any]:
         """End-to-end execution path: check budget, get candidate plans,
         select the best by ROI score, gate on destructive tools, execute
@@ -74,7 +98,7 @@ class Executive:
                 "budget": asdict(self._budget.status()),
             }
 
-        outcome = self._planner.plan(objective)
+        outcome = self._planner.plan(objective, memory_context=self._read_memory_context())
         self._budget.record(
             outcome.cost_usd,
             model=outcome.model,
@@ -244,4 +268,3 @@ class Executive:
             "critique": critique_block,
             "budget": asdict(self._budget.status()),
         }
-        
