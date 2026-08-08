@@ -98,8 +98,8 @@ class Executive:
 
         steps = best_candidate.get("steps") or []
         selected_summary = {
-            "approach_summary": getattr(best_score ,"approach_summary" , ""),
-            "confidence": getattr(best_score ,"confidence" , 0.0),
+            "approach_summary": best_score.approach_summary,
+            "confidence": best_score.confidence,
         }
 
         if not steps:
@@ -205,8 +205,9 @@ class Executive:
                 output_tokens=critique_outcome.output_tokens,
             )
             critique_block: Dict[str, Any] = {
-                "verdict": critique_outcome.verdict,
-                "critique": critique_outcome.critique,
+                "verdict": critique_outcome.verdict or "critique_unavailable",
+                "critique": critique_outcome.critique
+                or "Critic call did not return a valid structured verdict (empty or malformed response from the model).",
             }
 
             # Best-effort: log a lesson via Hermes' real memory tool only
@@ -243,3 +244,4 @@ class Executive:
             "critique": critique_block,
             "budget": asdict(self._budget.status()),
         }
+        
