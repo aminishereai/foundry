@@ -2,21 +2,51 @@
 it succeeded. Owns no infrastructure: all LLM access and all tool
 execution happen through the two adapters it's given.
 
-Phase 3: after a successful execution, the Critic reviews the real
-results (one more LLM call, budget-gated same as planning) and the
-verdict is attached to the result. The Critic never changes what already
-happened — it only judges it. If budget is exhausted, critique is
-skipped and marked as such, never silently faked.
+Phase 4 (minimal slice):
+- Retry: a step whose dispatch call raises (transient failure — network
+  blip, momentary tool unavailability) gets ONE retry after a short
+  backoff before the run gives up. A step whose dispatch SUCCEEDS but
+  whose own result contains a logical error (e.g. "File not found") is
+  NOT retried — that's a permanent failure, retrying it wastes budget on
+  something a second attempt can't fix. Real recovery/re-planning stays
+  out of scope; this is bounded resilience to transient failures only.
+- Safety gate: Hermes calls this handler synchronously and expects one
+  immediate return — there's no way to pause mid-call and wait for a
+  human. So the honest gate is: if the selected plan includes a
+  destructive/irreversible tool and confirm_destructive wasn't passed,
+  nothing is dispatched at all. The full plan is returned with
+  status='confirmation_required' for a human to review before re-calling
+  with confirm_destructive=true.
+
+Phase 3: Critic reviews real results after success, budget-gated,
+never fakes a critique if budget runs out.
 """
 
 from __future__ import annotations
 
+import time
 from dataclasses import asdict
 from typing import Any, Dict, List, Optional
 
 from .critic import Critic
 from .economics import Budget, select_best
 from .planner import Planner
+
+MAX_DISPATCH_ATTEMPTS = 2  # 1 initial attempt + 1 retry
+RETRY_BACKOFF_SECONDS = 1.0
+
+# Tools whose effects are hard or impossible to undo. Conservative by
+# design — a false positive here just costs one confirmation round trip;
+# a false negative means an irreversible action ran unsupervised.
+DESTRUCTIVE_TOOLS = {
+    "terminal",
+    "execute_code",
+    "write_file",
+    "patch",
+    "delegate_task",
+    "cronjob",
+    "computer_use",
+}
 
 
 class Executive:
@@ -31,12 +61,12 @@ class Executive:
         self._tools = tool_adapter
         self._budget = budget if budget is not None else Budget()
 
-    def run(self, objective: str) -> Dict[str, Any]:
+    def run(self, objective: str, confirm_destructive: bool = False) -> Dict[str, Any]:
         """End-to-end execution path: check budget, get candidate plans,
-        select the best by ROI score, execute its steps through Hermes in
-        order (stop on first failure), then critique a successful result
-        if budget allows. Never raises — callers get a structured error
-        result instead."""
+        select the best by ROI score, gate on destructive tools, execute
+        steps through Hermes in order (retry once on transient failure,
+        stop on repeated/logical failure), then critique a successful
+        result if budget allows. Never raises."""
         if not self._budget.try_reserve():
             return {
                 "status": "budget_exceeded",
@@ -54,6 +84,7 @@ class Executive:
 
         best_candidate, best_score, scores = select_best(outcome.candidates)
         considered = [asdict(s) for s in scores]
+        budget_snapshot = asdict(self._budget.status())
 
         if best_candidate is None:
             return {
@@ -62,13 +93,13 @@ class Executive:
                 "reason": outcome.overall_reasoning
                 or "Planner did not produce any usable candidates.",
                 "considered_candidates": considered,
-                "budget": asdict(self._budget.status()),
+                "budget": budget_snapshot,
             }
 
         steps = best_candidate.get("steps") or []
         selected_summary = {
             "approach_summary": getattr(best_score ,"approach_summary" , ""),
-            "confidence": getattr(best_score, "confidence" , 0.0),
+            "confidence": getattr(best_score ,"confidence" , 0.0),
         }
 
         if not steps:
@@ -79,7 +110,26 @@ class Executive:
                 or "The best-scoring candidate was to take no action.",
                 "selected_candidate": selected_summary,
                 "considered_candidates": considered,
-                "budget": asdict(self._budget.status()),
+                "budget": budget_snapshot,
+            }
+
+        destructive_steps = [
+            s.get("tool_name") for s in steps if s.get("tool_name") in DESTRUCTIVE_TOOLS
+        ]
+        if destructive_steps and not confirm_destructive:
+            return {
+                "status": "confirmation_required",
+                "objective": objective,
+                "reason": (
+                    f"Plan includes destructive tool(s) {sorted(set(destructive_steps))}. "
+                    "Nothing was executed. Re-call foundry_execute with "
+                    "confirm_destructive=true after human review to proceed."
+                ),
+                "proposed_steps": steps,
+                "overall_reasoning": outcome.overall_reasoning,
+                "selected_candidate": selected_summary,
+                "considered_candidates": considered,
+                "budget": budget_snapshot,
             }
 
         executed_steps: List[Dict[str, Any]] = []
@@ -97,19 +147,32 @@ class Executive:
                     "executed_steps": executed_steps,
                     "selected_candidate": selected_summary,
                     "considered_candidates": considered,
-                    "budget": asdict(self._budget.status()),
+                    "budget": budget_snapshot,
                 }
 
-            try:
-                tool_result = self._tools.dispatch(tool_name, tool_args)
-            except Exception as exc:  # noqa: BLE001 — report, don't crash the tool loop
+            last_exc: Optional[Exception] = None
+            tool_result = None
+            attempts = 0
+            while attempts < MAX_DISPATCH_ATTEMPTS:
+                attempts += 1
+                try:
+                    tool_result = self._tools.dispatch(tool_name, tool_args)
+                    last_exc = None
+                    break
+                except Exception as exc:  # noqa: BLE001 — report, don't crash the tool loop
+                    last_exc = exc
+                    if attempts < MAX_DISPATCH_ATTEMPTS:
+                        time.sleep(RETRY_BACKOFF_SECONDS)
+
+            if last_exc is not None:
                 executed_steps.append({
                     "step_index": index,
                     "tool_name": tool_name,
                     "tool_args": tool_args,
                     "reasoning": reasoning,
                     "status": "error",
-                    "error": str(exc),
+                    "error": str(last_exc),
+                    "attempts": attempts,
                 })
                 return {
                     "status": "error",
@@ -119,7 +182,7 @@ class Executive:
                     "failed_at_step": index,
                     "selected_candidate": selected_summary,
                     "considered_candidates": considered,
-                    "budget": asdict(self._budget.status()),
+                    "budget": budget_snapshot,
                 }
 
             executed_steps.append({
@@ -129,6 +192,7 @@ class Executive:
                 "reasoning": reasoning,
                 "status": "ok",
                 "result": tool_result,
+                "attempts": attempts,
             })
 
         # All steps succeeded. Critique what actually happened, budget permitting.
