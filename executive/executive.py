@@ -98,8 +98,8 @@ class Executive:
 
         steps = best_candidate.get("steps") or []
         selected_summary = {
-            "approach_summary": best_score.approach_summary,
-            "confidence": best_score.confidence,
+            "approach_summary": getattr(best_score ,"approach_summary" , ""),
+            "confidence": getattr(best_score ,"confidence" , 0.0),
         }
 
         if not steps:
