@@ -60,7 +60,7 @@ class Critic:
             schema_name="foundry.critique",
             purpose="foundry.critic",
             temperature=0.0,
-            max_tokens=1200,
+            max_tokens=3000,
         )
         model = os.environ.get("FOUNDRY_CRITIC_MODEL")
         if model:
