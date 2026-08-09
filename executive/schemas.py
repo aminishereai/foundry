@@ -77,6 +77,7 @@ CANDIDATE_PLANS_SCHEMA = {
     },
     "required": ["candidates", "overall_reasoning"],
 }
+
 CRITIQUE_SCHEMA = {
     "type": "object",
     "properties": {
@@ -97,4 +98,69 @@ CRITIQUE_SCHEMA = {
         },
     },
     "required": ["verdict", "critique"],
+}
+
+OPPORTUNITY_HYPOTHESIS_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "problem": {
+            "type": "string",
+            "description": "The real problem the failed business was solving, grounded only in the research provided.",
+        },
+        "target_customer": {"type": "string"},
+        "business_model_summary": {"type": "string"},
+        "why_it_failed": {
+            "type": "string",
+            "description": "Grounded in the research. If the research doesn't clearly say why, state that explicitly rather than guessing.",
+        },
+        "failure_category": {
+            "type": "string",
+            "enum": [
+                "bad_idea", "bad_execution", "bad_timing", "bad_distribution",
+                "bad_economics", "capital_constraint", "technology_limitation",
+                "market_change", "unclear_from_research",
+            ],
+        },
+        "assumption_that_may_have_changed": {
+            "type": "string",
+            "description": "What assumption behind the original failure might no longer hold today. May be empty if none is evident.",
+        },
+        "resurrection_hypothesis": {
+            "type": "string",
+            "description": "One or two sentences: could this be viable now, and why. Must be labeled as a hypothesis, not a claim.",
+        },
+        "cheapest_validation_experiment": {
+            "type": "string",
+            "description": "The cheapest, fastest real test that would meaningfully reduce uncertainty about this hypothesis.",
+        },
+        "confidence": {
+            "type": "number",
+            "description": "0.0-1.0 honest confidence this hypothesis is worth pursuing further, given ONLY the research shown.",
+        },
+        "facts": {
+            "type": "array",
+            "items": {"type": "string"},
+            "description": "Things directly stated in the research, not inferred.",
+        },
+        "estimates": {
+            "type": "array",
+            "items": {"type": "string"},
+            "description": "Numeric or qualitative estimates you are making, clearly labeled as estimates.",
+        },
+        "assumptions": {
+            "type": "array",
+            "items": {"type": "string"},
+            "description": "Things assumed true but not confirmed by the research.",
+        },
+        "unknowns": {
+            "type": "array",
+            "items": {"type": "string"},
+            "description": "Important open questions the research did not answer.",
+        },
+    },
+    "required": [
+        "problem", "why_it_failed", "failure_category",
+        "resurrection_hypothesis", "cheapest_validation_experiment",
+        "confidence", "facts", "estimates", "assumptions", "unknowns",
+    ],
 }

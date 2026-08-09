@@ -1,9 +1,12 @@
 """Foundry — Executive Operating System. Hermes plugin entry point.
 
-Phase 0 scope only: register one tool (foundry_execute) that runs the
-Executive end-to-end for a single objective. Everything not required for
-that path (Critic, Economics, Memory, multi-step planning) deliberately
-does not exist yet — see ROADMAP.md.
+Registers two tools sharing one Executive/Budget instance (unified
+spend tracking across both capabilities):
+- foundry_execute: general objective execution (Planner/ROI/retry/
+  safety-gate/Critic).
+- foundry_discover_opportunity: Internet Graveyard vertical slice —
+  reuses foundry_execute's entire loop for real research, then
+  synthesizes a grounded opportunity hypothesis via OpportunityAnalyst.
 """
 
 from __future__ import annotations
@@ -30,4 +33,11 @@ def register(ctx: Any) -> None:
         toolset="foundry",
         schema=schemas.FOUNDRY_EXECUTE,
         handler=partial(tools.foundry_execute, executive=executive),
+    )
+
+    ctx.register_tool(
+        name="foundry_discover_opportunity",
+        toolset="foundry",
+        schema=schemas.FOUNDRY_DISCOVER_OPPORTUNITY,
+        handler=partial(tools.foundry_discover_opportunity, executive=executive),
     )

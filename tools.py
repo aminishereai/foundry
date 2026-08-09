@@ -31,3 +31,25 @@ def foundry_execute(args: dict, *, executive, **kwargs) -> str:
         })
 
     return json.dumps(result)
+
+
+def foundry_discover_opportunity(args: dict, *, executive, **kwargs) -> str:
+    """Handler for foundry_discover_opportunity. Same contract as
+    foundry_execute: always returns JSON, never raises."""
+    query = (args.get("query") or "").strip()
+    if not query:
+        return json.dumps({"status": "error", "error": "No query provided"})
+
+    confirm_destructive = bool(args.get("confirm_destructive", False))
+
+    try:
+        result = executive.research_opportunity(query, confirm_destructive=confirm_destructive)
+    except Exception as exc:  # noqa: BLE001 — handlers must never raise
+        return json.dumps({
+            "status": "error",
+            "stage": "handler",
+            "query": query,
+            "error": str(exc),
+        })
+
+    return json.dumps(result)

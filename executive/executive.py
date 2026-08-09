@@ -32,6 +32,7 @@ from typing import Any, Dict, List, Optional
 
 from .critic import Critic
 from .economics import Budget, select_best
+from .opportunity_analyst import OpportunityAnalyst
 from .planner import Planner
 
 MAX_DISPATCH_ATTEMPTS = 2  # 1 initial attempt + 1 retry
@@ -68,6 +69,7 @@ class Executive:
     ) -> None:
         self._planner = Planner(llm_adapter)
         self._critic = Critic(llm_adapter)
+        self._opportunity_analyst = OpportunityAnalyst(llm_adapter)
         self._tools = tool_adapter
         self._budget = budget if budget is not None else Budget()
 
@@ -122,9 +124,9 @@ class Executive:
 
         steps = best_candidate.get("steps") or []
         selected_summary = {
-            "approach_summary": getattr(best_score ,"approach_summary" , ""),
-            "confidence": getattr(best_score ,"confidence" , 0.0),
-        }
+                    "approach_summary": getattr(best_score ,"approach_summary" , ""),
+                    "confidence": getattr(best_score ,"confidence" , 0.0),
+                }
 
         if not steps:
             return {
@@ -267,4 +269,81 @@ class Executive:
             "considered_candidates": considered,
             "critique": critique_block,
             "budget": asdict(self._budget.status()),
+        }
+
+    def research_opportunity(self, query: str, confirm_destructive: bool = False) -> Dict[str, Any]:
+        """Internet Graveyard vertical slice. Reuses run() UNMODIFIED for
+        the real research phase (web_search/web_extract via the normal
+        Planner/dispatch loop — no new execution logic exists here). Only
+        after real research results exist does OpportunityAnalyst
+        synthesize a grounded hypothesis from them — never before, so
+        nothing is fabricated ahead of the actual search happening.
+        Persists via Hermes' real memory tool, best-effort."""
+        research_objective = (
+            f"Search the web for a real failed, shut-down, or abandoned "
+            f"software business related to: {query}. Then fetch/extract "
+            f"enough real detail to understand why it failed."
+        )
+        exec_result = self.run(research_objective, confirm_destructive=confirm_destructive)
+
+        if exec_result.get("status") != "ok" or not exec_result.get("executed_steps"):
+            return {
+                "status": "research_failed",
+                "query": query,
+                "reason": (
+                    exec_result.get("reason")
+                    or exec_result.get("error")
+                    or f"Research did not complete (status={exec_result.get('status')})."
+                ),
+                "research_result": exec_result,
+            }
+
+        if not self._budget.try_reserve():
+            return {
+                "status": "budget_exceeded",
+                "query": query,
+                "research_result": exec_result,
+                "budget": exec_result.get("budget"),
+            }
+
+        outcome = self._opportunity_analyst.analyze(query, exec_result["executed_steps"])
+        self._budget.record(
+            outcome.cost_usd,
+            model=outcome.model,
+            input_tokens=outcome.input_tokens,
+            output_tokens=outcome.output_tokens,
+        )
+        budget_snapshot = asdict(self._budget.status())
+
+        if not outcome.hypothesis:
+            return {
+                "status": "synthesis_failed",
+                "query": query,
+                "reason": "Opportunity Analyst did not return a valid structured hypothesis.",
+                "research_steps": exec_result["executed_steps"],
+                "budget": budget_snapshot,
+            }
+
+        persisted = False
+        try:
+            h = outcome.hypothesis
+            lesson = (
+                f"Opportunity hypothesis (query: '{query[:80]}'): "
+                f"{h.get('problem', '')[:150]} | "
+                f"failure_category={h.get('failure_category')} | "
+                f"confidence={h.get('confidence')} | "
+                f"resurrection: {h.get('resurrection_hypothesis', '')[:200]}"
+            )
+            self._tools.dispatch("memory", {"target": "memory", "action": "add", "content": lesson})
+            persisted = True
+        except Exception:  # noqa: BLE001 — best-effort, never fatal
+            persisted = False
+
+        return {
+            "status": "ok",
+            "query": query,
+            "hypothesis": outcome.hypothesis,
+            "persisted": persisted,
+            "research_steps": exec_result["executed_steps"],
+            "budget": budget_snapshot,
         }

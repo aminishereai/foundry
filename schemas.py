@@ -1,7 +1,8 @@
 """Hermes-facing tool schema.
 
-This is the ONLY schema Hermes' model sees for Foundry. It describes the
-single entry point into the Executive. Internal schemas live in
+This is the ONLY schema Hermes' model sees for Foundry in Phase 0. It
+describes the single entry point into the Executive. Internal schemas
+(e.g. what the Planner's own structured LLM call returns) live in
 executive/schemas.py — the model never sees those directly.
 """
 
@@ -43,5 +44,38 @@ FOUNDRY_EXECUTE = {
             },
         },
         "required": ["objective"],
+    },
+}
+
+FOUNDRY_DISCOVER_OPPORTUNITY = {
+    "name": "foundry_discover_opportunity",
+    "description": (
+        "Internet Graveyard: search for a real failed, shut-down, or "
+        "abandoned software business related to a query, research why it "
+        "failed using real Hermes web tools, and synthesize ONE grounded "
+        "opportunity hypothesis — never fabricated, always grounded in "
+        "the real research — including explicit facts/estimates/"
+        "assumptions/unknowns and the cheapest real validation "
+        "experiment. If the underlying research plan needs a destructive "
+        "tool, it is gated the same way foundry_execute is."
+    ),
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "query": {
+                "type": "string",
+                "description": (
+                    "What kind of failed business to look for, e.g. "
+                    "'B2B SaaS scheduling tools' or 'consumer meal kit "
+                    "startups'."
+                ),
+            },
+            "confirm_destructive": {
+                "type": "boolean",
+                "default": False,
+                "description": "Same semantics as foundry_execute's confirm_destructive.",
+            },
+        },
+        "required": ["query"],
     },
 }
