@@ -13,6 +13,7 @@ from dataclasses import dataclass
 from typing import Any, Dict, List, Optional
 
 from ..prompts.opportunity_analyst_prompt import OPPORTUNITY_ANALYST_INSTRUCTIONS
+from .model_policy import call_with_fallback, tiers_for
 from .schemas import OPPORTUNITY_HYPOTHESIS_SCHEMA
 
 
@@ -52,14 +53,8 @@ class OpportunityAnalyst:
             temperature=0.0,
             max_tokens=3000,
         )
-        model = os.environ.get("FOUNDRY_ANALYST_MODEL")
-        if model:
-            kwargs["model"] = model
-        provider = os.environ.get("FOUNDRY_ANALYST_PROVIDER")
-        if provider:
-            kwargs["provider"] = provider
-
-        result = self._llm.complete_structured(**kwargs)
+        tiers = tiers_for("opportunity_analyst", "FOUNDRY_ANALYST_MODEL", "FOUNDRY_ANALYST_PROVIDER")
+        result = call_with_fallback(self._llm, tiers, **kwargs)
         usage = getattr(result, "usage", None)
         return OpportunityOutcome(
             hypothesis=result.parsed,

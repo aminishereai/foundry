@@ -21,6 +21,7 @@ from dataclasses import dataclass
 from typing import Any, Dict, List, Optional
 
 from ..prompts.critic_prompt import CRITIC_INSTRUCTIONS
+from .model_policy import call_with_fallback, tiers_for
 from .schemas import CRITIQUE_SCHEMA
 
 
@@ -62,14 +63,8 @@ class Critic:
             temperature=0.0,
             max_tokens=3000,
         )
-        model = os.environ.get("FOUNDRY_CRITIC_MODEL")
-        if model:
-            kwargs["model"] = model
-        provider = os.environ.get("FOUNDRY_CRITIC_PROVIDER")
-        if provider:
-            kwargs["provider"] = provider
-
-        result = self._llm.complete_structured(**kwargs)
+        tiers = tiers_for("critic", "FOUNDRY_CRITIC_MODEL", "FOUNDRY_CRITIC_PROVIDER")
+        result = call_with_fallback(self._llm, tiers, **kwargs)
         usage = getattr(result, "usage", None)
         parsed = result.parsed or {}
         return CritiqueOutcome(

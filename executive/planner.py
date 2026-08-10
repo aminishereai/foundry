@@ -24,6 +24,7 @@ from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
 
 from ..prompts.planner_prompt import PLANNER_INSTRUCTIONS
+from .model_policy import call_with_fallback, tiers_for
 from .schemas import CANDIDATE_PLANS_SCHEMA
 
 
@@ -77,14 +78,8 @@ class Planner:
             temperature=0.0,
             max_tokens=4000,
         )
-        model = os.environ.get("FOUNDRY_PLANNER_MODEL")
-        if model:
-            kwargs["model"] = model
-        provider = os.environ.get("FOUNDRY_PLANNER_PROVIDER")
-        if provider:
-            kwargs["provider"] = provider
-
-        result = self._llm.complete_structured(**kwargs)
+        tiers = tiers_for("planner", "FOUNDRY_PLANNER_MODEL", "FOUNDRY_PLANNER_PROVIDER")
+        result = call_with_fallback(self._llm, tiers, **kwargs)
         usage = getattr(result, "usage", None)
         parsed = result.parsed or {}
         return PlanOutcome(
