@@ -7,17 +7,23 @@ scoring model, just try-then-fallback on real outcomes, per the explicit
 instruction to only use measurable runtime evidence.
 
 Tier 0 (most capable): 9Router/Kiro via Hermes' custom-provider —
-genuinely frontier-tier models (Claude Opus 5, Sonnet 5, GPT-5.6) at
-zero cost, but OPPORTUNISTIC: this rides a third-party proxy of someone
-else's provider quota and can become unavailable or get rate-limited
-without warning. Treated as "best if available," never as the only path.
+your real, confirmed "primary-hermes" combo models, tried individually
+in order (kr/claude-sonnet-4.5-agentic first, then other kr/* and
+ollama/* combo members). Genuinely frontier-tier at zero cost, but
+OPPORTUNISTIC: this rides a third-party proxy of someone else's
+provider quota and can become unavailable or get rate-limited without
+warning — confirmed to happen in practice, not just a theoretical risk.
 
-Tier 1 (durable baseline): DeepSeek V4 Flash via OpenRouter — real,
-accountable, paid-when-needed, has been reliable in every live test so
-far.
+Tier N-2 (durable baseline): DeepSeek V4 Flash via OpenRouter — real,
+accountable, paid-when-needed, reliable in every live test so far.
 
-Tier 2 (last resort): Hermes' own configured default — whatever that is,
-it's guaranteed to exist.
+Tier N-1 (cost-effective free fallback): openrouter/free — no cost,
+automatic free-model selection, lower reliability than the paid
+DeepSeek route but still a real, working option when both 9Router and
+budget considerations argue against DeepSeek.
+
+Tier N (last resort): Hermes' own configured default — guaranteed to
+exist.
 
 Explicit FOUNDRY_*_MODEL/PROVIDER env vars still take priority when set:
 they become tier 0, with this module's default tiers as fallback behind
@@ -40,18 +46,33 @@ CUSTOM_PROVIDER_NAME = os.environ.get("FOUNDRY_CUSTOM_PROVIDER_NAME", "custom")
 
 DEFAULT_TIERS: Dict[str, List[Dict[str, Optional[str]]]] = {
     "planner": [
-        {"model": "kr/claude-opus-5", "provider": CUSTOM_PROVIDER_NAME},
+        {"model": "kr/claude-sonnet-4.5-agentic", "provider": CUSTOM_PROVIDER_NAME},
+        {"model": "kr/deepseek-3.2-agentic", "provider": CUSTOM_PROVIDER_NAME},
+        {"model": "kr/qwen3-coder-next-agentic", "provider": CUSTOM_PROVIDER_NAME},
+        {"model": "ollama/glm-5", "provider": CUSTOM_PROVIDER_NAME},
+        {"model": "ollama/kimi-k2.5", "provider": CUSTOM_PROVIDER_NAME},
+        {"model": "ollama/minimax-m3", "provider": CUSTOM_PROVIDER_NAME},
+        {"model": "ollama/gpt-oss:120b", "provider": CUSTOM_PROVIDER_NAME},
         {"model": "deepseek/deepseek-v4-flash-0731", "provider": "openrouter"},
+        {"model": "openrouter/free", "provider": "openrouter"},
         {"model": None, "provider": None},
     ],
     "critic": [
-        {"model": "kr/claude-sonnet-5", "provider": CUSTOM_PROVIDER_NAME},
+        {"model": "kr/claude-sonnet-4.5-agentic", "provider": CUSTOM_PROVIDER_NAME},
+        {"model": "kr/deepseek-3.2-agentic", "provider": CUSTOM_PROVIDER_NAME},
+        {"model": "ollama/glm-5", "provider": CUSTOM_PROVIDER_NAME},
+        {"model": "ollama/kimi-k2.5", "provider": CUSTOM_PROVIDER_NAME},
         {"model": "deepseek/deepseek-v4-flash-0731", "provider": "openrouter"},
+        {"model": "openrouter/free", "provider": "openrouter"},
         {"model": None, "provider": None},
     ],
     "opportunity_analyst": [
-        {"model": "kr/claude-opus-5", "provider": CUSTOM_PROVIDER_NAME},
+        {"model": "kr/claude-sonnet-4.5-agentic", "provider": CUSTOM_PROVIDER_NAME},
+        {"model": "kr/deepseek-3.2-agentic", "provider": CUSTOM_PROVIDER_NAME},
+        {"model": "ollama/glm-5", "provider": CUSTOM_PROVIDER_NAME},
+        {"model": "ollama/kimi-k2.5", "provider": CUSTOM_PROVIDER_NAME},
         {"model": "deepseek/deepseek-v4-flash-0731", "provider": "openrouter"},
+        {"model": "openrouter/free", "provider": "openrouter"},
         {"model": None, "provider": None},
     ],
 }
