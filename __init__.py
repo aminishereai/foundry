@@ -41,3 +41,24 @@ def register(ctx: Any) -> None:
         schema=schemas.FOUNDRY_DISCOVER_OPPORTUNITY,
         handler=partial(tools.foundry_discover_opportunity, executive=executive),
     )
+
+    ctx.register_tool(
+        name="foundry_list_opportunities",
+        toolset="foundry",
+        schema=schemas.FOUNDRY_LIST_OPPORTUNITIES,
+        handler=partial(tools.foundry_list_opportunities, executive=executive),
+    )
+
+    ctx.register_tool(
+        name="foundry_validate_opportunity",
+        toolset="foundry",
+        schema=schemas.FOUNDRY_VALIDATE_OPPORTUNITY,
+        handler=partial(tools.foundry_validate_opportunity, executive=executive),
+    )
+
+    ctx.register_tool(
+        name="foundry_capital",
+        toolset="foundry",
+        schema=schemas.FOUNDRY_CAPITAL,
+        handler=partial(tools.foundry_capital, executive=executive),
+    )
