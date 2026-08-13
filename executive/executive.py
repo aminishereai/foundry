@@ -32,7 +32,9 @@ from typing import Any, Dict, List, Optional
 
 from .critic import Critic
 from .economics import Budget, select_best
+from .capital_ledger import CapitalLedger
 from .opportunity_analyst import OpportunityAnalyst
+from .opportunity_backlog import OpportunityBacklog, filter_entries, rank_by_confidence
 from .planner import Planner
 
 MAX_DISPATCH_ATTEMPTS = 2  # 1 initial attempt + 1 retry
@@ -72,6 +74,8 @@ class Executive:
         self._opportunity_analyst = OpportunityAnalyst(llm_adapter)
         self._tools = tool_adapter
         self._budget = budget if budget is not None else Budget()
+        self._backlog = OpportunityBacklog(tool_adapter)
+        self._ledger = CapitalLedger(tool_adapter)
 
     def _read_memory_context(self) -> str:
         """Best-effort read of Hermes' real persistent memory file, so
@@ -139,8 +143,12 @@ class Executive:
                 "budget": budget_snapshot,
             }
 
+        auto_approved = {
+            t.strip() for t in os.environ.get("FOUNDRY_AUTO_APPROVE_TOOLS", "").split(",") if t.strip()
+        }
         destructive_steps = [
-            s.get("tool_name") for s in steps if s.get("tool_name") in DESTRUCTIVE_TOOLS
+            s.get("tool_name") for s in steps
+            if s.get("tool_name") in DESTRUCTIVE_TOOLS and s.get("tool_name") not in auto_approved
         ]
         if destructive_steps and not confirm_destructive:
             return {
@@ -339,11 +347,82 @@ class Executive:
         except Exception:  # noqa: BLE001 — best-effort, never fatal
             persisted = False
 
+        backlog_entry_id = None
+        try:
+            entries_before = self._backlog.load()
+            if self._backlog.add(query, outcome.hypothesis):
+                backlog_entry_id = len(entries_before) + 1
+        except Exception:  # noqa: BLE001 — best-effort, never fatal
+            backlog_entry_id = None
+
         return {
             "status": "ok",
             "query": query,
             "hypothesis": outcome.hypothesis,
             "persisted": persisted,
+            "opportunity_id": backlog_entry_id,
             "research_steps": exec_result["executed_steps"],
             "budget": budget_snapshot,
         }
+
+    def validate_opportunity(self, opportunity_id: int, confirm_destructive: bool = False) -> Dict[str, Any]:
+        """Reuses run() UNCHANGED to research-validate a specific backlog
+        entry's cheapest_validation_experiment. Honest scope: this is
+        deeper research/checking, not autonomously posting to real
+        external services — no code here does anything beyond what
+        run()'s existing, already-gated tool loop can do."""
+        entry = self._backlog.get(opportunity_id)
+        if entry is None:
+            return {"status": "not_found", "opportunity_id": opportunity_id}
+
+        h = entry.get("hypothesis", {})
+        experiment = h.get("cheapest_validation_experiment", "")
+        objective = (
+            f"Investigate, via real research, whether this is currently feasible: "
+            f"{experiment}. Context: {h.get('resurrection_hypothesis', '')}"
+        )
+        exec_result = self.run(objective, confirm_destructive=confirm_destructive)
+
+        validation_result = {
+            "status": exec_result.get("status"),
+            "critique": exec_result.get("critique"),
+        }
+        self._backlog.update_status(opportunity_id, status="validation_attempted", validation_result=validation_result)
+
+        return {
+            "status": "ok",
+            "opportunity_id": opportunity_id,
+            "experiment": experiment,
+            "validation_run": exec_result,
+        }
+
+    def list_opportunities(
+        self,
+        status: Optional[str] = None,
+        min_confidence: Optional[float] = None,
+        failure_category: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """Read-only. No LLM call, no cost. This IS the knowledge-base
+        query capability — real structured filtering, no fabricated
+        semantic search."""
+        entries = self._backlog.load()
+        filtered = filter_entries(entries, status=status, min_confidence=min_confidence, failure_category=failure_category)
+        ranked = rank_by_confidence(filtered)
+        return {"status": "ok", "count": len(ranked), "opportunities": ranked}
+
+    def record_capital(
+        self,
+        entry_type: str,
+        amount_usd: float,
+        description: str,
+        opportunity_id: Optional[int] = None,
+    ) -> Dict[str, Any]:
+        """Records a REAL, human-reported cost or revenue figure.
+        Foundry has no payment/bank integration — this never estimates."""
+        if entry_type not in ("cost", "revenue"):
+            return {"status": "error", "error": "entry_type must be 'cost' or 'revenue'"}
+        ok = self._ledger.record(entry_type, amount_usd, description, opportunity_id)
+        return {"status": "ok" if ok else "error", "recorded": ok}
+
+    def capital_summary(self) -> Dict[str, Any]:
+        return {"status": "ok", **self._ledger.summary()}
