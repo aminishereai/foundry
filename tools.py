@@ -53,3 +53,52 @@ def foundry_discover_opportunity(args: dict, *, executive, **kwargs) -> str:
         })
 
     return json.dumps(result)
+
+
+def foundry_list_opportunities(args: dict, *, executive, **kwargs) -> str:
+    """Read-only, no LLM call. Never raises."""
+    try:
+        result = executive.list_opportunities(
+            status=args.get("status"),
+            min_confidence=args.get("min_confidence"),
+            failure_category=args.get("failure_category"),
+        )
+    except Exception as exc:  # noqa: BLE001
+        return json.dumps({"status": "error", "stage": "handler", "error": str(exc)})
+    return json.dumps(result)
+
+
+def foundry_validate_opportunity(args: dict, *, executive, **kwargs) -> str:
+    opportunity_id = args.get("opportunity_id")
+    if opportunity_id is None:
+        return json.dumps({"status": "error", "error": "No opportunity_id provided"})
+    confirm_destructive = bool(args.get("confirm_destructive", False))
+    try:
+        result = executive.validate_opportunity(int(opportunity_id), confirm_destructive=confirm_destructive)
+    except Exception as exc:  # noqa: BLE001
+        return json.dumps({"status": "error", "stage": "handler", "error": str(exc)})
+    return json.dumps(result)
+
+
+def foundry_capital(args: dict, *, executive, **kwargs) -> str:
+    action = args.get("action")
+    try:
+        if action == "summary":
+            result = executive.capital_summary()
+        elif action == "record":
+            entry_type = args.get("entry_type")
+            amount_usd = args.get("amount_usd")
+            description = args.get("description")
+            if not entry_type or amount_usd is None or not description:
+                return json.dumps({
+                    "status": "error",
+                    "error": "action='record' requires entry_type, amount_usd, and description",
+                })
+            result = executive.record_capital(
+                entry_type, float(amount_usd), description, args.get("opportunity_id"),
+            )
+        else:
+            return json.dumps({"status": "error", "error": "action must be 'record' or 'summary'"})
+    except Exception as exc:  # noqa: BLE001
+        return json.dumps({"status": "error", "stage": "handler", "error": str(exc)})
+    return json.dumps(result)
