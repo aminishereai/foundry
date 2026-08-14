@@ -13,10 +13,11 @@ was built, per the principle of using as little of Foundry as possible.
 from __future__ import annotations
 
 import json
+import os
 import time
 from typing import Any, Dict, List, Optional
 
-BACKLOG_FILE_PATH = "foundry_opportunities.json"
+BACKLOG_FILE_PATH = os.path.expanduser("~/.hermes/plugins/foundry/data_opportunities.json")
 
 
 class OpportunityBacklog:

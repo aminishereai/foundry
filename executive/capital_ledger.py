@@ -10,10 +10,11 @@ tool and a fake "AI tracks your business" claim.
 from __future__ import annotations
 
 import json
+import os
 import time
 from typing import Any, Dict, List, Optional
 
-LEDGER_FILE_PATH = "foundry_capital_ledger.json"
+LEDGER_FILE_PATH = os.path.expanduser("~/.hermes/plugins/foundry/data_capital_ledger.json")
 
 
 class CapitalLedger:
