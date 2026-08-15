@@ -36,6 +36,7 @@ from .capital_ledger import CapitalLedger
 from .opportunity_analyst import OpportunityAnalyst
 from .opportunity_backlog import OpportunityBacklog, filter_entries, rank_by_confidence
 from .planner import Planner
+from .scorecard import Scorecard
 
 MAX_DISPATCH_ATTEMPTS = 2  # 1 initial attempt + 1 retry
 RETRY_BACKOFF_SECONDS = 1.0
@@ -76,6 +77,7 @@ class Executive:
         self._budget = budget if budget is not None else Budget()
         self._backlog = OpportunityBacklog(tool_adapter)
         self._ledger = CapitalLedger(tool_adapter)
+        self._scorecard = Scorecard(tool_adapter)
 
     def _read_memory_context(self) -> str:
         """Best-effort read of Hermes' real persistent memory file, so
@@ -146,9 +148,17 @@ class Executive:
         auto_approved = {
             t.strip() for t in os.environ.get("FOUNDRY_AUTO_APPROVE_TOOLS", "").split(",") if t.strip()
         }
+        # Real, evidence-gated autonomy layered on top of the explicit
+        # static allowlist above. Conservative defaults: nothing earns
+        # autonomy until it genuinely has a track record — this is not
+        # "trust it by default," this is "prove it, then it's trusted."
+        min_successes = int(os.environ.get("FOUNDRY_AUTONOMY_MIN_SUCCESSES", "20"))
+        min_success_rate = float(os.environ.get("FOUNDRY_AUTONOMY_MIN_SUCCESS_RATE", "0.95"))
         destructive_steps = [
             s.get("tool_name") for s in steps
-            if s.get("tool_name") in DESTRUCTIVE_TOOLS and s.get("tool_name") not in auto_approved
+            if s.get("tool_name") in DESTRUCTIVE_TOOLS
+            and s.get("tool_name") not in auto_approved
+            and not self._scorecard.is_earned_autonomous(s.get("tool_name"), min_successes, min_success_rate)
         ]
         if destructive_steps and not confirm_destructive:
             return {
