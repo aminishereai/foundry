@@ -450,3 +450,7 @@ class Executive:
 
     def capital_summary(self) -> Dict[str, Any]:
         return {"status": "ok", **self._ledger.summary()}
+
+    def get_scorecard(self) -> Dict[str, Any]:
+        """Read-only. No LLM call. Real recorded evidence only."""
+        return {"status": "ok", "scorecard": self._scorecard.all()}
