@@ -209,6 +209,9 @@ class Executive:
                         time.sleep(RETRY_BACKOFF_SECONDS)
 
             if last_exc is not None:
+                # Precise, mechanical, real evidence — this specific
+                # tool genuinely failed after exhausting retries.
+                self._scorecard.record_outcome(tool_name, success=False)
                 executed_steps.append({
                     "step_index": index,
                     "tool_name": tool_name,
@@ -253,6 +256,17 @@ class Executive:
                 "critique": critique_outcome.critique
                 or "Critic call did not return a valid structured verdict (empty or malformed response from the model).",
             }
+
+            # Real evidence for the Scorecard — only when we got a real
+            # verdict (not the empty/malformed fallback). Conservative
+            # attribution: a multi-tool plan's single overall verdict is
+            # applied to every tool involved. This slightly under-credits
+            # a tool that behaved fine alongside a tool that didn't — the
+            # safe direction to err, since this data gates autonomy.
+            if critique_outcome.verdict in ("satisfied", "partially_satisfied", "not_satisfied"):
+                step_success = critique_outcome.verdict == "satisfied"
+                for step in executed_steps:
+                    self._scorecard.record_outcome(step["tool_name"], success=step_success)
 
             # Best-effort: log a lesson via Hermes' real memory tool only
             # when the Critic found a genuine gap — not routine successes.
