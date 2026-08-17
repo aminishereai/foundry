@@ -62,3 +62,10 @@ def register(ctx: Any) -> None:
         schema=schemas.FOUNDRY_CAPITAL,
         handler=partial(tools.foundry_capital, executive=executive),
     )
+
+    ctx.register_tool(
+        name="foundry_scorecard",
+        toolset="foundry",
+        schema=schemas.FOUNDRY_SCORECARD,
+        handler=partial(tools.foundry_scorecard, executive=executive),
+    )

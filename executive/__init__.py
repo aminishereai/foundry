@@ -6,6 +6,7 @@ Re-exports the public classes so callers can do
 """
 
 from .critic import Critic, CritiqueOutcome
+from .capital_ledger import CapitalLedger
 from .economics import (
     Budget,
     BudgetStatus,
@@ -17,7 +18,9 @@ from .economics import (
 from .executive import Executive
 from .model_policy import call_with_fallback, tiers_for
 from .opportunity_analyst import OpportunityAnalyst, OpportunityOutcome
+from .opportunity_backlog import OpportunityBacklog, filter_entries, rank_by_confidence
 from .planner import PlanOutcome, Planner
+from .scorecard import Scorecard
 
 __all__ = [
     "Executive",
@@ -27,6 +30,11 @@ __all__ = [
     "CritiqueOutcome",
     "OpportunityAnalyst",
     "OpportunityOutcome",
+    "OpportunityBacklog",
+    "filter_entries",
+    "rank_by_confidence",
+    "CapitalLedger",
+    "Scorecard",
     "Budget",
     "BudgetStatus",
     "CandidateScore",
